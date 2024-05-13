@@ -1,6 +1,8 @@
 module Term {name : Set} where
 
 open import Data.List
+
+open import Util.Context {name}
 open import Util.Scope
 
 private variable
@@ -13,8 +15,9 @@ data Term (α : Scope name) : Set where
   ƛ_⇒_ : (x : name) (v : Term (x ∷ α)) → Term α
   -- type \cdot to get ·
   _·_   : (u v : Term α) → Term α
+  rec : {β : Scope name} (l : Context (Term α) β) → Term α
+  get : (k : name) → (r : Term α) → Term α
 
 infix  5  ƛ_⇒_
 infixl 7  _·_
 infix  9  `_#_
-  

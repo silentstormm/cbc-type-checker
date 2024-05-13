@@ -1,10 +1,8 @@
 module Util.Context {name : Set} where
 
 open import Data.List
-open import Term {name}
-open import Util.Scope
-
 open import Data.List.Relation.Unary.All
+open import Util.Scope
 
 private variable
   α : Scope name
@@ -17,9 +15,9 @@ Context v α = All (λ _ → v) α
 ∅ : Context v Φ
 ∅ = []
 
-_,_∶_ : Context v α → (x : name) → v → Context v (x ∷ α)
-_,_∶_ ctx _ v = v ∷ ctx
-infix 4 _,_∶_
+_,_::_ : Context v α → (x : name) → v → Context v (x ∷ α)
+_,_::_ ctx _ v = v ∷ ctx
+infix 4 _,_::_
 
 lookupVar : (Γ : Context v α) (x : name) (p : x ∈ α) → v
 lookupVar (v ∷ _  ) x here = v

@@ -1,12 +1,12 @@
 module Everything where
 
-open import Agda.Builtin.String
+open import Data.String
 
 name = String
 
 open import Term {name}
-open import TypeChecker {name}
-open import TypeChecker.Type
+open import TypeChecker {name} (Data.String._≟_)
+open import TypeChecker.Type {name}
 open import TypeChecker.TypingRules {name}
 open import Util.Context {name}
 open import Util.Evaluator
@@ -24,7 +24,7 @@ private
   ℕ⇒ℕ : Type
   ℕ⇒ℕ = `ℕ ⇒ `ℕ
 
-  ⊢ƛx⇒x:ℕ⇒ℕ : Evaluator (∅ ⊢ ƛx⇒x ∶ ℕ⇒ℕ)
+  ⊢ƛx⇒x:ℕ⇒ℕ : Evaluator (∅ ⊢ ƛx⇒x :: ℕ⇒ℕ)
   ⊢ƛx⇒x:ℕ⇒ℕ = checkType ∅ ƛx⇒x ℕ⇒ℕ
 
   test : ⊢ƛx⇒x:ℕ⇒ℕ ≡ return (⊢ƛ (⊢` here))
