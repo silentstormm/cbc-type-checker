@@ -11,7 +11,6 @@ private variable
 Context : (v : Set) → (α : Scope name) → Set
 Context v α = All (λ _ → v) α
 
--- type \emptyset to get ∅
 ∅ : Context v Φ
 ∅ = []
 

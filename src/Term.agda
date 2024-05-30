@@ -1,8 +1,11 @@
-module Term {name : Set} where
+open import Relation.Binary using (DecidableEquality)
+
+module Term {name : Set} (_≟_ : DecidableEquality name) where
 
 open import Data.List
 
 open import Util.Context {name}
+open import Util.Map _≟_ using (Map)
 open import Util.Scope
 
 private variable
@@ -10,13 +13,14 @@ private variable
 
 data Term (α : Scope name) : Set where
   `_#_ : (x : name) → x ∈ α → Term α
-  -- type \Gl- to get ƛ
-  -- type \=> to get ⇒
   ƛ_⇒_ : (x : name) (v : Term (x ∷ α)) → Term α
-  -- type \cdot to get ·
   _·_   : (u v : Term α) → Term α
-  rec : {β : Scope name} (l : Context (Term α) β) → Term α
+  rec : Map (Term α) → Term α
   get : (k : name) → (r : Term α) → Term α
+  `zero : Term α
+  `suc : Term α → Term α
+  `pos : Term α → Term α
+  `negsuc : Term α → Term α
 
 infix  5  ƛ_⇒_
 infixl 7  _·_

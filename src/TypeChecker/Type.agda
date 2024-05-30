@@ -1,9 +1,24 @@
-module TypeChecker.Type {name : Set} where
+open import Relation.Binary using (DecidableEquality; Rel)
+
+module TypeChecker.Type {name : Set} (_≟_ : DecidableEquality name) where
+
+open import Data.List.Relation.Binary.Permutation.Propositional
+open import Level using (0ℓ)
+open import Relation.Binary.PropositionalEquality using (_≡_ ; refl ; cong)
 
 open import Util.Context {name}
+open import Util.Map _≟_
 open import Util.Scope
 
 data Type : Set where
+  `⊤ : Type
   `ℕ : Type
+  `ℤ : Type
   _⇒_ : (a b : Type) → Type
-  Rec : {β : Scope name} → (l : Context Type β) → Type
+  Rec : Map Type → Type
+
+infixr 4 _⇒_
+
+data _≈_ : Rel Type 0ℓ where
+  refl : {a : Type} → a ≈ a
+  perm : {m n : Map Type} → m ↭ n → Rec m ≈ Rec n
