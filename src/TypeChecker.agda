@@ -1,4 +1,4 @@
-open import Relation.Binary
+open import Relation.Binary using (DecidableEquality)
 
 module TypeChecker {name : Set} (_≟_ : DecidableEquality name) where
 
@@ -73,20 +73,18 @@ getFromContext {x ∷ β} (t ∷ᴬ ctx) k with x ≟ k
 -- Both functions return a typing judgement for the specific input term,
 -- so we know that we get a correct typing derivation 
 -- but also that it is a derivation for the given input(s).
-inferType : ∀ (Γ : Context Type α) u             → Evaluator (Σ[ t ∈ Type ] Γ ⊢ u :: t)
-checkType : ∀ (Γ : Context Type α) u (ty : Type) → Evaluator (Γ ⊢ u :: ty)
+inferType : ∀ (Γ : Context Type α) u → Evaluator (Σ[ t ∈ Type ] Γ ⊢ u :: t)
+checkType : ∀ (Γ : Context Type α) u (t : Type) → Evaluator (Σ[ s ∈ Type ] (s <: t × Γ ⊢ u :: s))
 
 inferType ctx (` x # index) = return (lookupVar ctx x index , ⊢` index)
-inferType ctx (ƛ x ⇒ body) = evalError "cannot infer the type of a lambda"
-inferType ctx ((ƛ x ⇒ body) · arg) = do
-  argt , argrule ← inferType ctx arg
-  vt , vrule ← inferType (ctx , x :: argt) body
-  return (vt , ⊢· (⊢ƛ vrule) argrule)
+inferType ctx (ƛ x :: ty ⇒ body) = do
+  vt , vrule ← inferType (ctx , x :: ty) body
+  return ((ty ⇒ vt) , ⊢ƛ vrule)
 inferType ctx (lam · arg) = do
   (a ⇒ b) , lamrule ← inferType ctx lam
     where _ → evalError "application head should have a function type"
-  argrule ← checkType ctx arg a
-  return (b , ⊢· lamrule argrule)
+  (_ , argsub , argrule) ← checkType ctx arg a
+  return (b , ⊢· lamrule argrule argsub)
 -- with inferType ctx lam
 -- ... | inj₁ x with x == "cannot infer the type of a lambda" = {!!}
 -- ...| inj₂ y = {!!}
@@ -119,37 +117,8 @@ inferType ctx (`negsuc n) = do
     where _ → evalError "negsuc needs an natural"
   return (`ℤ , ⊢negsuc rule)
 
-checkType ctx (ƛ x ⇒ body) (a ⇒ b) = do
-  tr ← checkType (ctx , x :: a) body b
-  return (⊢ƛ tr)
-checkType ctx (ƛ _ ⇒ _) _ = evalError "lambda should have a function type"
-checkType ctx term ty with inferType ctx term
+checkType ctx term t with inferType ctx term
 ... | inj₁ e = evalError e
-... | inj₂ (t , r) with t <:? ty
-... | yes s = return (⊢subsume r s)
-... | no s = evalError "mismatched types"
-  -- we call the conversion checker, which (if it succeeds) returns an equality proof,
-  -- unifying the left- and right-hand sides of the equality for the remainder of the do-block
-  --yes p ← t <:? ty
-  --  where
-  --    _ → ?
-  --return tr
-
-infer? : ∀ (Γ : Context Type α) u → Dec (Σ[ t ∈ Type ] Γ ⊢ u :: t)
-check? : ∀ (Γ : Context Type α) u t → Dec (Γ ⊢ u :: t)
-
-infer? ctx (` x # i) = yes (lookupVar ctx x i , ⊢` i)
-infer? ctx (ƛ p ⇒ b) = {!!}
-infer? ctx (f · a) = {!!}
-infer? ctx (rec []) = yes (Rec [] , ⊢rec-empty)
-infer? ctx (rec (x ∷ m)) = {!!}
-infer? ctx (get k r) = {!!}
-infer? ctx `zero = yes (`ℕ , ⊢zero)
-infer? ctx (`suc n) with infer? ctx n
-... | yes (`ℕ , r) = yes (`ℕ , ⊢suc r)
-... | yes (t , r) = no λ { (ty , ⊢suc snd) → contradiction ty {!t!} ; (fst , ⊢subsume snd x) → {!!} }
-... | no :< = map′ {!!} (λ { (.`ℕ , ⊢suc snd) → {!!} , {!!} ; (fst , ⊢subsume snd x) → {!!} , {!!}}) (no :<)
-infer? ctx (`pos n) = {!!}
-infer? ctx (`negsuc n) = {!!}
-
-check? ctx term ty = {!!}
+... | inj₂ (s , r) with s <:? t
+... | yes sub = return (s , sub , r)
+... | no sub = evalError "mismatched types"
