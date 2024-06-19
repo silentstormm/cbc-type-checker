@@ -1,28 +1,21 @@
-open import Relation.Binary using (DecidableEquality)
+module Term {name : Set} where
 
-module Term {name : Set} (_≟_ : DecidableEquality name) where
+open import Data.List using (List)
+open import Data.Product using (_×_)
 
-open import Data.List
+open import TypeChecker.Type {name}
 
-open import TypeChecker.Type _≟_
-open import Util.Context {name}
-open import Util.Map _≟_ using (Map)
-open import Util.Scope
-
-private variable
-  α : Scope name
-
-data Term (α : Scope name) : Set where
-  `_#_ : (x : name) → x ∈ α → Term α
-  ƛ_::_⇒_ : (x : name) → Type → Term (x ∷ α) → Term α
-  _·_   : (u v : Term α) → Term α
-  rec : Map (Term α) → Term α
-  get : name → Term α → Term α
-  `zero : Term α
-  `suc : Term α → Term α
-  `pos : Term α → Term α
-  `negsuc : Term α → Term α
+data Term : Set where
+  `_ : name → Term
+  ƛ_::_⇒_ : name → Type → Term → Term
+  _·_   : (f a : Term) → Term
+  rec : List (name × Term) → Term
+  get : name → Term → Term
+  `zero : Term
+  `suc : Term → Term
+  `pos : Term → Term
+  `negsuc : Term → Term
 
 infix  5  ƛ_::_⇒_
 infixl 7  _·_
-infix  9  `_#_
+infix  9  `_

@@ -1,19 +1,15 @@
-open import Relation.Binary using (DecidableEquality; Rel)
+open import Relation.Binary using (DecidableEquality)
 
-module TypeChecker.Type {name : Set} (_≟_ : DecidableEquality name) where
+module TypeChecker.Type {name : Set} where
 
-open import Level using (0ℓ)
-open import Relation.Binary.PropositionalEquality using (_≡_ ; refl ; cong)
-
-open import Util.Context {name}
-open import Util.Map _≟_
-open import Util.Scope
+open import Data.List using (List)
+open import Data.Product using (_×_)
 
 data Type : Set where
   `⊤ : Type
   `ℕ : Type
   `ℤ : Type
   _⇒_ : (a b : Type) → Type
-  Rec : Map Type → Type
+  Rec : List (name × Type) → Type -- not Map to avoid parameter 
 
 infixr 4 _⇒_

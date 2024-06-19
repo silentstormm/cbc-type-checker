@@ -1,48 +1,40 @@
 open import Relation.Binary using (DecidableEquality)
 
-module TypeChecker.TypingRules {name : Set} (_≟_ : DecidableEquality name) where
+module TypeChecker.TypingRules {name : Set} (_≟ₙ_ : DecidableEquality name) where
 
+open import Axiom.Extensionality.Propositional
 open import Data.Bool using (true; false)
 open import Data.Empty using (⊥-elim)
 open import Data.List using (List; []; _∷_)
-open import Data.List.Relation.Binary.Permutation.Propositional
--- open import Data.List.Relation.Binary.Sublist.Propositional
 open import Data.List.Relation.Unary.First as First using ([_]; _∷_)
 open import Data.List.Relation.Unary.All as All using (All) renaming (_∷_ to _∷ᴬ_)
 open import Data.List.Relation.Unary.All.Properties using (Any¬⇒¬All)
 open import Data.List.Relation.Unary.Any using (Any; here)
 open import Data.Product
-open import Function.Base using (_on_; _∘_; case_of_)
+open import Function.Base using (_on_; _∘_; case_of_; flip)
 open import Level using (0ℓ)
 open import Relation.Binary.Core using (Rel) renaming (_⇒_ to _=>_)
-open import Relation.Binary.Definitions
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong; inspect)
-open import Relation.Nullary using (yes; no; contradiction; map′; Dec; does; proof; from-yes)
+open import Relation.Binary.Definitions using (Decidable; Irrelevant)
+open import Relation.Binary.PropositionalEquality as Eq using (_≡_; refl; cong; cong₂; sym; inspect)
+open import Relation.Nullary as N using (yes; no; contradiction; map′; Dec; does; proof; from-yes)
 open import Relation.Nullary.Negation using (¬_)
 
-open import Term _≟_
-open import TypeChecker.Type _≟_
-open import Util.Context {name}
-open import Util.Map _≟_
+open import Term
+open import Term.Properties _≟ₙ_ renaming (_≟_ to _≟ᵤ_)
+open import TypeChecker.Type {name}
+open import TypeChecker.Type.Properties _≟ₙ_ renaming (_≟_ to _≟ₜ_)
+-- open import Util.Context {name}
+open import Util.Map _≟ₙ_ _≟ₜ_
+open import Util.Map _≟ₙ_ _≟ᵤ_ as Record using () renaming (Map to Record)
 open import Util.Scope
 
 private variable
   x : name
   α β : Scope name
   A B C D : Type
-  u v : Term α
+  u v : Term
 
 data _<:_ : Rel Type 0ℓ where
-  -- <:refl
-  --   ---------------------------------
-  --   : A <: A
-
-  -- <:trans
-  --   : A <: B
-  --   → B <: C
-  --   ---------------------------------
-  --   → A <: C
-
   <:⊤
     : A <: `⊤
 
@@ -62,54 +54,35 @@ data _<:_ : Rel Type 0ℓ where
     ---------------------------------
     : `ℕ <: `ℤ
 
-  -- <:rec-empty
-  --   : ∀ {m}
-  --   ---------------------------------
-  --   → Rec m <: Rec []
-
-  -- <:width
-  --   : ∀ {m n}
-  --   → Rec m <: Rec n
-  --   ---------------------------------
-  --   → Rec ((x , A) ∷ m) <: Rec n
-
-  -- <:depth
-  --   : ∀ {m n}
-  --   → Rec m <: Rec n
-  --   → A <: B
-  --   ---------------------------------
-  --   → Rec ((x , A) ∷ m) <: Rec ((x , B) ∷ n)
-
   <:rec
-    : {m n : Map Type}
+    : {m n : Map}
     → n ⊆′ m
     -- → (∀ {e} (i : e ∈₁ m) (j : e ∈₁ n) → (lookup i <: lookup j))
     → All (λ { (k , v) → (i : k ∈ₖ′ m) → lookup′ i <: v}) n
     ---------------------------------
     → Rec m <: Rec n
-
-  -- width
-  --   : {m n : Map Type}
-  --   → Rec m <: Rec n
-  --   → ¬ (x ∈ₖ n)
-  --   ---------------------------------
-  --   → Rec ((x , A) ∷ m) <: Rec n
-
-  -- depth
-  --   : {m n : Map Type}
-  --   → Rec m <: Rec n
-  --   → A <: B
-  --   → ¬ (x ∈ₖ m)
-  --   → ¬ (x ∈ₖ n)
-  --   ---------------------------------
-  --   → Rec ((x , A) ∷ m) <: Rec ((x , B) ∷ n)
-
 infix 3 _<:_
 
-------------------------------------------------------------
-
-{-# NON_TERMINATING #-}
+-- <:-reflexive : A ≡ B → A <: B
+{-# TERMINATING #-}
 _<:?_ : Decidable _<:_
+
+-- <:-reflexive {`⊤} refl = <:⊤
+-- <:-reflexive {`ℕ} refl = <:ℕ
+-- <:-reflexive {`ℤ} refl = <:ℤ
+-- <:-reflexive {A ⇒ B} refl = <:⇒ (<:-reflexive refl) (<:-reflexive refl)
+-- <:-reflexive {Rec x} refl = <:rec ⊆′-refl {!!}
+--   where
+--     allst-refl : ∀ {x : Map} → All (λ { (k , v) → (i : k ∈ₖ′ x) → lookup′ i <: v}) x
+--     allst-refl {[]} = All.[]
+--     allst-refl {(k , v) ∷ xs} = (λ i → <:-reflexive (cong lookup′ (∈ₖ′-irrelevant {v} i [ refl ]))) ∷ᴬ All.map (λ
+--       { {l , w} p → λ
+--         { [ refl ] → {!<:-reflexive!} --case l ∈ₖ′? xs of λ { (no ¬i) → {!!} ; (yes i) → {!<:-reflexive !} }
+--         ; (x ∷ i) → p i
+--         }
+--       }) allst-refl
+    -- (All.map (λ { {l , w} i → case l ≟ₙ k of λ { (no ¬eq) → ¬eq ∷ i ; (yes refl) → [ refl ] } }) (-refl {xs}))
+
 s <:? `⊤ = yes <:⊤
 `⊤ <:? `ℕ = no (λ ())
 `ℕ <:? `ℕ = yes <:ℕ
@@ -144,53 +117,21 @@ Rec m <:? Rec n with n ⊆′? m
 ... | yes i with lookup′ i <:? v
 ... | no subtype = no λ { (<:rec _ s) → contradiction s (λ { (px ∷ᴬ f) → contradiction (px i) subtype })}
 ... | yes subtype with Rec m <:? Rec o
-... | yes (<:rec s t) = yes (<:rec subset ((λ { j → lemma (∈ₖ′-irrelevant {_} {v} i j) subtype }) ∷ᴬ t))
+... | yes (<:rec s t) = yes (<:rec subset ((λ { j → lemma (∈ₖ′-irrelevant {v = v} i j) subtype }) ∷ᴬ t))
   where
-    lemma : ∀ {m : Map Type} {i j : x ∈ₖ′ m} → i ≡ j → lookup′ {Type} {x} {m} i <: A → lookup′ {Type} {x} {m} j <: A
+    lemma : ∀ {m : Map} {i j : x ∈ₖ′ m} → i ≡ j → lookup′ i <: A → lookup′ j <: A
     lemma refl s = s
 ... | no m<:o = no (m<:o ∘ λ { (<:rec (px ∷ᴬ s) (px₁ ∷ᴬ t)) → <:rec s t })
 
-------------------------------------------------------------
--- Properties of _<:_
-
--- <:-refl : Reflexive _<:_
--- <:-refl {`⊤} = <:⊤ {`⊤}
--- <:-refl {`ℕ} = <:ℕ
--- <:-refl {`ℤ} = <:ℤ
--- <:-refl {arg ⇒ body} = <:⇒ <:-refl <:-refl
--- <:-refl {Rec x} = <:rec {!!} {!!}
-
--- <:-trans : Transitive _<:_
--- <:-trans i<:j j<:k = {!!}
-
--- <:antisym : Antisymmetric _≈_ _<:_
--- <:antisym _ refl = refl
--- <:antisym refl _ = refl
--- <:antisym (trans i<:j j<:k) (trans k<:j j<:i) = {!trans!}
--- <:antisym (width x) (trans sub sub₁) = {!!}
--- <:antisym (depth eq eq₁ x x₁) (trans sub sub₁) = {!!}
--- -- <:antisym eq (perm x) = {!!}
--- <:antisym eq (width x) = {!!}
--- <:antisym eq (depth sub sub₁ x x₁) = {!!}
-
-------------------------------------------------------------
-
-data _⊢_::_ (Γ : Context Type α) : Term α → Type → Set where
-  -- propertes of contexts
-  -- ⊢permute : (Δ : Context Type α)
-  --   → Γ ⊢ v :: A
-  --   → Γ ↭ Δ
-  --   ---------------------------------
-  --   → Δ ⊢ v :: A
-
-
+data _⊢_::_ (Γ : Map) : Term → Type → Set where
   ⊢`
-    : (p : x ∈ α)
+    : (p : (x , A) ∈′ Γ) (q : x ∈ₖ′ Γ)
+    → A ≡ lookup′ q
     ---------------------------------
-    → Γ ⊢ ` x # p :: lookupVar Γ x p
+    → Γ ⊢ ` x :: A
 
   ⊢ƛ
-    : Γ , x :: A ⊢ u :: B
+    : (x , A) ∷ Γ ⊢ u :: B
     ---------------------------------
     → Γ ⊢ (ƛ x :: A ⇒ u) :: A ⇒ B
 
@@ -206,19 +147,19 @@ data _⊢_::_ (Γ : Context Type α) : Term α → Type → Set where
     : Γ ⊢ rec [] :: Rec []
 
   ⊢rec-more
-    : {rs : Map (Term α)} {rt : Map Type}
-    → ¬ (x ∈ₖ rs)
+    : {rs : Record} {rt : Map}
+    → ¬ (x ∈ₖ′ rt)
     → Γ ⊢ rec rs :: Rec rt
     → Γ ⊢ v :: A
     ---------------------------------
     → Γ ⊢ rec ((x , v) ∷ rs) :: Rec ((x , A) ∷ rt)
 
   ⊢get
-    : {r : Map Type} (p : x ∈ₖ r)
-    -- → Γ ⊢ v :: Rec ((Γₕ , x :: a) ⊕ Γₜ)
+    : {r : Map} (p : (x , A) ∈′ r) (q : x ∈ₖ′ r)
+    → A ≡ lookup′ q
     → Γ ⊢ v :: Rec r
     ---------------------------------
-    → Γ ⊢ get x v :: lookup p
+    → Γ ⊢ get x v :: A
 
   ⊢zero
     ---------------------------------
@@ -240,3 +181,34 @@ data _⊢_::_ (Γ : Context Type α) : Term α → Type → Set where
     → Γ ⊢ `negsuc v :: `ℤ
 
 infix 3 _⊢_::_
+
+getType : ∀ {Γ : Map} → Γ ⊢ v :: A → Σ[ t ∈ Type ] t ≡ A
+getType {Γ = Γ} (⊢` {x} {A = A} _ _ _) = A , refl
+getType (⊢ƛ {A = A} {B = B} _) = (A ⇒ B) , refl
+getType (⊢· {B = B} _ _ _) = B , refl
+getType ⊢rec-empty = Rec [] , refl
+getType (⊢rec-more {x = x} {A = A} {rt = rt} _ _ _) = (Rec ((x , A) ∷ rt)) , refl
+getType (⊢get {A = A} _ _ _ _) = A , refl
+getType ⊢zero = `ℕ , refl
+getType (⊢suc _) = `ℕ , refl
+getType (⊢pos _) = `ℤ , refl
+getType (⊢negsuc _) = `ℤ , refl
+
+private
+  fun-lemma : (A ⇒ B) ≡ (C ⇒ D) → B ≡ D
+  fun-lemma refl = refl
+
+  rec-lemma : ∀ {r s} → Rec r ≡ Rec s → r ≡ s
+  rec-lemma refl = refl
+
+⊢type-irrelevant : ∀ {Γ} → Γ ⊢ v :: A → Γ ⊢ v :: B → A ≡ B
+⊢type-irrelevant (⊢` {A = A} p q refl) (⊢` r s refl) rewrite ∈ₖ′-irrelevant {v = A} q s = refl
+⊢type-irrelevant (⊢ƛ {A = A} a) (⊢ƛ b) rewrite ⊢type-irrelevant a b = refl
+⊢type-irrelevant (⊢· l a s) (⊢· m b t) rewrite fun-lemma (⊢type-irrelevant l m) = refl
+⊢type-irrelevant ⊢rec-empty ⊢rec-empty = refl
+⊢type-irrelevant (⊢rec-more p ra va) (⊢rec-more q rb vb) rewrite rec-lemma (⊢type-irrelevant ra rb) | ⊢type-irrelevant va vb = refl
+⊢type-irrelevant (⊢get pa qa refl a) (⊢get {A = B} pb qb refl b) rewrite rec-lemma (⊢type-irrelevant a b) | ∈ₖ′-irrelevant {v = B} qa qb = refl
+⊢type-irrelevant ⊢zero ⊢zero = refl
+⊢type-irrelevant (⊢suc a) (⊢suc b) = refl
+⊢type-irrelevant (⊢pos a) (⊢pos b) = refl
+⊢type-irrelevant (⊢negsuc a) (⊢negsuc b) = refl

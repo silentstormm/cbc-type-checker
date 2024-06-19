@@ -1,153 +1,119 @@
 open import Relation.Binary using (DecidableEquality)
 
-module Util.Map {name : Set} (_≟_ : DecidableEquality name) where
+module Util.Map {K V : Set} (_≟ₖ_ : DecidableEquality K) (_≟ᵥ_ : DecidableEquality V) where
 
+open import Axiom.UniquenessOfIdentityProofs using (UIP; module Decidable⇒UIP)
 open import Data.Bool using (true; false)
 open import Data.List hiding (lookup)
 open import Data.List.Relation.Unary.Any hiding (lookup)
-open import Data.List.Relation.Unary.All using (All; all?)
+open import Data.List.Relation.Unary.All as All using (All; all?)
 open import Data.List.Relation.Unary.First using (First) renaming ([_] to [_]¹; _∷_ to _∷¹_)
 open import Data.List.Relation.Unary.First.Properties using (cofirst?; irrelevant)
-open import Data.Product
-open import Function.Base using (_on_; _∘_)
+open import Function.Base using (_on_; _∘_; case_of_)
 open import Level using (0ℓ; suc)
-open import Relation.Binary using (Rel; _⇒_)
+open import Relation.Binary as Binary using (Rel; _⇒_)
 open import Relation.Binary.Definitions using (Reflexive; Symmetric; Transitive; Decidable)
 open import Relation.Binary.Bundles using (DecSetoid; Setoid)
 open import Relation.Binary.Structures using (IsEquivalence; IsDecEquivalence)
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; sym; trans; cong)
-open import Relation.Nullary using (Dec; does; yes; no; contradiction; Irrelevant)
-open import Relation.Nullary.Negation using (¬_)
+open import Relation.Binary.PropositionalEquality using (_≡_; _≢_; refl; sym; trans; cong)
+open import Relation.Nullary using (¬_; Dec; does; yes; no; contradiction; Irrelevant)
 open import Relation.Unary using (Pred; ∁)
 open import Relation.Unary.Properties using (∁-irrelevant)
 
-private variable
-  V : Set
+open import Util.Map.KeyValue _≟ₖ_ _≟ᵥ_
 
-data _≟₁_ (l : name × V) : name × V → Set where
-  refl₁ : ∀ {w : V} → (proj₁ l , proj₂ l) ≟₁ (proj₁ l , w)
+Map : Set
+Map = List KV
 
-≟₁-refl : ∀ {V} → Reflexive (_≟₁_ {V})
-≟₁-refl = refl₁
+_∈′_ : KV → Map → Set
+_∈′_ x = First (x ≢_) (x ≡_)
 
-≟₁-sym : ∀ {V} → Symmetric (_≟₁_ {V})
-≟₁-sym refl₁ = refl₁
+_∈′?_ : Decidable _∈′_
+_∈′?_ x = cofirst?  (x ≟_)
 
-≟₁-trans : ∀ {V} → Transitive (_≟₁_ {V})
-≟₁-trans refl₁ refl₁ = refl₁
+∈′-irrelevant : ∀ {x} {m : Map} → Irrelevant (x ∈′ m)
+∈′-irrelevant {x} {m} = irrelevant (λ p q → contradiction q p) (∁-irrelevant (x ≡_)) (Decidable⇒UIP.≡-irrelevant _≟_)
 
-≟₁-≟ : ∀ {V} → Decidable (_≟₁_ {V})
-≟₁-≟ (fst , snd) (fst₁ , snd₁) with fst ≟ fst₁
-... | yes refl = yes refl₁
-... | no ¬proof = no (¬proof ∘ ≟₁-pre)
-  where
-    ≟₁-pre : (x : (fst , snd) ≟₁ (fst₁ , snd₁)) → fst ≡ fst₁
-    ≟₁-pre refl₁ = refl
-
-Quotient : (S : Set) (_∼_ : Rel S 0ℓ) (ER : IsDecEquivalence _∼_) → DecSetoid _ _
-Quotient S _~_ ER = record
-  { Carrier = S
-  ; _≈_ = _~_
-  ; isDecEquivalence = ER
-  }
-
-KeyEquiv : (V : Set) →  DecSetoid _ _
-KeyEquiv V = Quotient (name × V) _≟₁_ ≟₁-isDec
-  where
-    ≟₁-isEQ : IsEquivalence _≟₁_
-    ≟₁-isEQ = record
-      { refl = ≟₁-refl
-      ; sym = ≟₁-sym
-      ; trans = ≟₁-trans
-      }
-    ≟₁-isDec : IsDecEquivalence _≟₁_
-    ≟₁-isDec = record
-      { isEquivalence = ≟₁-isEQ
-      ; _≟_ = ≟₁-≟
-      }
-
-Map : (V : Set) → Set
-Map V = List (name × V)
-
-_≡₁_ : name × V → name × V → Set
-_≡₁_ = (_∘ proj₁) ∘ _≡_ ∘ proj₁
-
-_≢₁_ : name × V → name × V → Set
-x ≢₁ y = ¬ x ≡₁ y
-
-_≡ₖ_ : name → name × V → Set
-_≡ₖ_ = (_∘ proj₁) ∘ _≡_
-
-≡ₖ-irrelevant : ∀ {k l} {v : V} → Irrelevant (k ≡ₖ (l , v))
-≡ₖ-irrelevant refl refl = refl
-
-_≢ₖ_ : name → name × V → Set
-x ≢ₖ y = ¬ x ≡ₖ y
-
-_∈ₖ_ : name → Map V → Set
+_∈ₖ_ : K → Map → Set
 _∈ₖ_ k = Any (k ≡ₖ_)
 
-_∈ₖ?_ : Decidable (_∈ₖ_ {V})
-k ∈ₖ? m = any? ((k ≟_) ∘ proj₁) m
+_∈ₖ?_ : Decidable _∈ₖ_
+k ∈ₖ? m = any? ((k ≟ₖ_) ∘ proj₁) m
 
-_∈ₖ′_ : name → Map V → Set
+_∈ₖ′_ : K → Map → Set
 _∈ₖ′_ k = First (k ≢ₖ_) (k ≡ₖ_)
 
-_∈ₖ′?_ : Decidable (_∈ₖ′_ {V})
-_∈ₖ′?_ k = cofirst?  ((k ≟_) ∘ proj₁)
+_∈ₖ′?_ : Decidable _∈ₖ′_
+_∈ₖ′?_ k = cofirst?  ((k ≟ₖ_) ∘ proj₁)
 
-∈ₖ′-irrelevant : {v : V} → ∀ {k} {m : Map V} → Irrelevant (k ∈ₖ′ m)
-∈ₖ′-irrelevant {V} {v} {k} =
-  irrelevant (λ p q → contradiction q p) (∁-irrelevant (_≡ₖ_ {V} k) {_ , v}) (≡ₖ-irrelevant {V} {_} {_} {v})
+∈ₖ′-irrelevant : ∀ {v : V} {k} {m} → Irrelevant (k ∈ₖ′ m)
+∈ₖ′-irrelevant {v} {k} = irrelevant (λ p q → contradiction q p) (∁-irrelevant (k ≡ₖ_) {_ , v}) (≡ₖ-irrelevant {v = v})
 
-_∈₁_ : name × V → Map V → Set
+_∈₁_ : KV → Map → Set
 _∈₁_ e = Any (e ≡₁_)
 
-_∈₁?_ : Decidable (_∈₁_ {V})
-e ∈₁? m = any? ((proj₁ e ≟_) ∘ proj₁) m
+_∈₁?_ : Decidable _∈₁_
+(k , v) ∈₁? m = any? ((k ≟ₖ_) ∘ proj₁) m
 
-_∈₁′_ : name × V → Map V → Set
+_∈₁′_ : KV → Map → Set
 _∈₁′_ k = First (k ≢₁_) (k ≡₁_)
 
-_∈₁′?_ : Decidable (_∈₁′_ {V})
-_∈₁′?_ k = cofirst?  ((proj₁ k ≟_) ∘ proj₁)
+_∈₁′?_ : Decidable _∈₁′_
+_∈₁′?_ (k , v) = cofirst?  ((k ≟ₖ_) ∘ proj₁)
 
-_⊆_ : Rel (Map V) 0ℓ
+∈₁′-irrelevant : ∀ {x} {m} → Irrelevant (x ∈₁′ m)
+∈₁′-irrelevant {k , v} =
+  irrelevant (λ p q → contradiction q p) (∁-irrelevant ((k , v) ≡₁_ ) {_ , v}) (≡₁-irrelevant {x = k , v} {y = _ , v})
+
+_⊆_ : Rel Map 0ℓ
 a ⊆ b = All (_∈₁ b) a
 
-_⊆′_ : Rel (Map V) 0ℓ
+_⊆′_ : Rel Map 0ℓ
 a ⊆′ b = All (_∈₁′ b) a
 
---⊆-refl : Reflexive (_⊆_ {V})
---⊆-refl = {!!}
-
--- _⊆_ : Rel (Map V) 0ℓ
--- xs ⊆ ys = ∀ {x} → x ∈₁ xs → x ∈₁ ys
-
--- open import Relation.Nullary using (contradiction; map′; _×-dec_)
-
--- ⊆-∷ : ∀ {x} {a b} (i : x ∈₁ b) (y : a ⊆ b) → (x ∷ a) ⊆ b
--- ⊆-∷ {x} i s ai = {!!}
-
--- s2? : Decidable (_⊆_ {V})
--- s2? [] b = yes λ ()
--- s2? (x ∷ a) b = map′ (uncurry {!!}) {!!} ((x ∈₁? b) ×-dec s2? a b)
--- s2? (x ∷ a) b with x ∈₁? b
--- ... | yes p = {!s2? a (removeAt b (index p))!}
--- ... | no p with x ∈₁? (x ∷ a)
--- ... | yes i = no (p ∘ λ f → f {x} i)
--- ... | no i = contradiction (here refl) i
-
-_⊆?_ : Decidable (_⊆_ {V})
+_⊆?_ : Decidable _⊆_
 a ⊆? b = all? (_∈₁? b) a
 
-_⊆′?_ : Decidable (_⊆′_ {V})
+_⊆′?_ : Decidable _⊆′_
 a ⊆′? b = all? (_∈₁′? b) a
 
-lookup : {k : name} {m : Map V} → k ∈ₖ m → V
-lookup {m = x ∷ _} (here p) = proj₂ x
+⊆′-irrelevant : Binary.Irrelevant _⊆′_
+⊆′-irrelevant All.[] All.[] = refl
+⊆′-irrelevant (All._∷_ {x = k , v} px a) (qx All.∷ b) rewrite ∈₁′-irrelevant {_ , v} px qx | ⊆′-irrelevant a b = refl
+
+⊆′-refl : Reflexive  _⊆′_
+⊆′-refl {[]} = All.[]
+⊆′-refl {(k , v) ∷ xs} = First.[ refl ] All.∷ (All.map (λ { {l , w} i → case l ≟ₖ k of λ
+  { (no ¬eq) → ¬eq First.∷ i
+  ; (yes refl) → First.[ refl ]
+  } }) (⊆′-refl {xs}))
+
+lookup₁ : ∀ {x} {m} → x ∈₁ m → V
+lookup₁ {k , v} (here px) = v
+lookup₁ {x} (there p) = lookup₁ {x = x} p
+
+lookup₁′ : ∀ {x} {m} → x ∈₁′ m → V
+lookup₁′ {k , v} ([ px ]¹) = v
+lookup₁′ {x} (px ∷¹ p) = lookup₁′ {x} p
+
+lookup : ∀ {k} {m} → k ∈ₖ m → V
+lookup {m = (k , v) ∷ _} (here p) = v
 lookup (there p) = lookup p
 
-lookup′ : {k : name} {m : Map V} → k ∈ₖ′ m → V
+lookup′ : ∀ {k} {m} → k ∈ₖ′ m → V
 lookup′ {m = x ∷ _} ([ qx ]¹) = proj₂ x
 lookup′ (px ∷¹ xs) = lookup′ xs
+
+∈ₖ′⇒∈′ : ∀ {k} {m} {v : V} (i : k ∈ₖ′ m) → v ≡ lookup′ i → (k , v) ∈′ m
+∈ₖ′⇒∈′ [ refl ]¹ refl = [ refl ]¹
+∈ₖ′⇒∈′ (x ∷¹ i) refl with ∈ₖ′⇒∈′ i refl
+... | [ y ]¹ = (λ { refl → x refl }) ∷¹ [ y ]¹
+... | y ∷¹ j = (λ { refl → x refl }) ∷¹ y ∷¹ j
+
+∈′⇒∈ₖ′ : ∀ {k} {v} {m} → (k , v) ∈′ m → k ∈ₖ′ m
+∈′⇒∈ₖ′ {k} {m = m} i with k ∈ₖ′? m
+... | yes j = j
+∈′⇒∈ₖ′ {k} {m = .((k , _) ∷ _)} [ refl ]¹ | no ¬j = contradiction [ refl ]¹ ¬j
+∈′⇒∈ₖ′ {k} {m = (l , v) ∷ _} (¬eq ∷¹ i) | no ¬j with k ≟ₖ l
+... | no ¬keq = contradiction ((λ { refl → contradiction refl ¬keq }) ∷¹ ∈′⇒∈ₖ′ i) ¬j
+... | yes refl = contradiction [ refl ]¹ ¬j

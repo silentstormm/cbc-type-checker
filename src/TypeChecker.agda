@@ -1,6 +1,6 @@
 open import Relation.Binary using (DecidableEquality)
 
-module TypeChecker {name : Set} (_≟_ : DecidableEquality name) where
+module TypeChecker {name : Set} (_≟ₙ_ : DecidableEquality name) where
 
 open import Agda.Primitive
 open import Agda.Builtin.Equality
@@ -11,114 +11,103 @@ open import Data.List using (List; []; _∷_; map)
 open import Data.List.Relation.Binary.Pointwise using (decidable)
 open import Data.List.Relation.Unary.All using ([]) renaming (_∷_ to _∷ᴬ_)
 open import Data.List.Relation.Unary.Any using (here; there)
+open import Data.List.Relation.Unary.First as First using ()
 open import Data.Sum.Base using (inj₁; inj₂)
 open import Effect.Monad
 open import Function.Base using (_∘_; case_of_)
 open RawMonad ⦃ ... ⦄
-open import Relation.Nullary using (yes; no; Dec; map′; contradiction)
+open import Relation.Nullary using (yes; no; Dec; map′; contradiction; contraposition)
 
-open import Term _≟_
-open import TypeChecker.Type _≟_
-open import TypeChecker.TypingRules _≟_
+open import Term
+open import Term.Properties _≟ₙ_ renaming (_≟_ to _≟ᵤ_)
+open import TypeChecker.Type {name}
+open import TypeChecker.Type.Properties _≟ₙ_ renaming (_≟_ to _≟ₜ_)
+open import TypeChecker.TypingRules _≟ₙ_
 open import Util.Context {name}
 open import Util.Evaluator
-open import Util.Map _≟_
+open import Util.Map _≟ₙ_ _≟ₜ_
+open import Util.Map _≟ₙ_ _≟ᵤ_ as Record using () renaming (Map to Record)
 open import Util.Scope
 
 private variable
   α : Scope name
-  u : Term α
+  u : Term
 
--- Type checking function application requires conversion checking,
--- i.e. checking whether two types are equal.
---
-convert : (a b : Type) → Evaluator (a ≡ b)
-convertMap : (ma mb : Map Type) → Evaluator (ma ≡ mb)
-convertKV : (pa pb : name × Type) → Evaluator (pa ≡ pb)
+infer? : ∀ (Γ : Map) u → Dec (Σ[ t ∈ Type ] Γ ⊢ u :: t)
+check? : ∀ (Γ : Map) u (t : Type) → Dec (Σ[ s ∈ Type ] (s <: t × Γ ⊢ u :: s))
 
-convertKV (ka , ta) (kb , tb) with ka ≟ kb
-... | yes refl = do
-  refl ← convert ta tb
-  return refl
-... | no ¬a = evalError "record fields unequal"
+infer? ctx (` x) with x ∈ₖ′? ctx
+... | no ¬i = no λ { (t , ⊢` _ i _) → contradiction i ¬i }
+... | yes i = yes (lookup′ i , ⊢` (∈ₖ′⇒∈′ i refl) i refl)
+infer? ctx (ƛ x :: ty ⇒ body) with infer? ((x , ty) ∷ ctx) body
+... | no ¬r = no λ { (.(ty ⇒ _) , ⊢ƛ {B = B} r) → contradiction (B , r) ¬r }
+... | yes (vt , vr) = yes ((ty ⇒ vt) , ⊢ƛ vr)
+infer? ctx (lam · arg) with infer? ctx lam
+... | no ¬lam = no λ { (appt , ⊢· {A = A} l _ _) → contradiction ((A ⇒ appt) , l) ¬lam }
+... | yes (`⊤ , fr) = no (λ { (t , ⊢· lr _ _) → contradiction (⊢type-irrelevant lr fr) λ () })
+... | yes (`ℕ , fr) = no (λ { (t , ⊢· lr _ _) → contradiction (⊢type-irrelevant lr fr) λ () })
+... | yes (`ℤ , fr) = no (λ { (t , ⊢· lr _ _) → contradiction (⊢type-irrelevant lr fr) λ () })
+... | yes (Rec x , fr) = no (λ { (t , ⊢· lr _ _) → contradiction (⊢type-irrelevant lr fr) λ () })
+... | yes ((a ⇒ b) , lamrule) with check? ctx arg a
+... | no ¬arg = no λ { (appt , ⊢· {A = A} {C = C} lr ar s) → case A ≟ₜ a of λ
+  { (no ¬eq) → contradiction (get-arg (⊢type-irrelevant lr lamrule)) ¬eq
+  ; (yes refl) → contradiction (C , s , ar) ¬arg
+  } }
+  where
+    get-arg : ∀ {A B C D} → (A ⇒ B) ≡ (C ⇒ D) → A ≡ C
+    get-arg refl = refl
+... | yes (_ , argsub , argrule) = yes (b , ⊢· lamrule argrule argsub)
+infer? ctx (rec []) = yes (Rec [] , ⊢rec-empty)
+infer? ctx (rec ((k , v) ∷ c)) with infer? ctx v | infer? ctx (rec c)
+... | no ¬v | _  = no λ { (.(Rec ((k , _) ∷ _)) , ⊢rec-more {A = A} i rr rv) → contradiction (A , rv) ¬v }
+... | _ | no ¬r  = no λ { (.(Rec ((k , _) ∷ _)) , ⊢rec-more {rt = rt} i rr rv) → contradiction (Rec rt , rr) ¬r }
+... | yes (vt , vr) | yes (Rec .[] , ⊢rec-empty) = yes (Rec ((k , vt) ∷ []) , ⊢rec-more (λ ()) ⊢rec-empty vr)
+... | yes (vt , vr) | yes (Rec rt , rr) with k ∈ₖ′? rt
+... | yes i = no λ { (t , ⊢rec-more {rt = r} ¬i recr newr) → case Rec rt ≟ₜ Rec r of λ
+  { (no ¬eq) → contradiction (⊢type-irrelevant rr recr) ¬eq
+  ; (yes refl) → contradiction i ¬i
+  } }
+... | no ¬i = yes (Rec ((k , vt) ∷ rt) , ⊢rec-more ¬i rr vr)
+infer? ctx (get k r) with infer? ctx r
+... | no ¬r = no λ { (_ , ⊢get {r = r} p q eq gr) → contradiction (Rec r , gr) ¬r }
+... | yes (`⊤ , rr) = no (λ { (t , ⊢get _ _ _ r) → contradiction (⊢type-irrelevant r rr) λ () })
+... | yes (`ℕ , rr) = no (λ { (t , ⊢get _ _ _ r) → contradiction (⊢type-irrelevant r rr) λ () })
+... | yes (`ℤ , rr) = no (λ { (t , ⊢get _ _ _ r) → contradiction (⊢type-irrelevant r rr) λ () })
+... | yes ((a ⇒ b) , rr) = no (λ { (t , ⊢get _ _ _ r) → contradiction (⊢type-irrelevant r rr) λ () })
+... | yes (Rec m , rr) with k ∈ₖ′? m
+... | no ¬i = no λ { (_ , ⊢get {r = r} _ i refl rule) → case Rec m ≟ₜ Rec r of λ
+  { (no ¬eq) → contradiction (⊢type-irrelevant rr rule) ¬eq
+  ; (yes refl) → contradiction i ¬i
+  } }
+... | yes i = yes (lookup′ i , ⊢get (∈ₖ′⇒∈′ i refl) i refl rr)
+infer? ctx `zero = yes (`ℕ , ⊢zero)
+infer? ctx (`suc n) with infer? ctx n
+... | yes (`ℕ , r) = yes (`ℕ , ⊢suc r)
+... | yes (`⊤ , r) = no λ { (`ℕ , ⊢suc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes (`ℤ , r) = no λ { (`ℕ , ⊢suc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes ((_ ⇒ _) , r) = no λ { (`ℕ , ⊢suc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes (Rec x , r) = no λ { (`ℕ , ⊢suc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | no ¬n = no λ { (`ℕ , ⊢suc nr) → contradiction (`ℕ , nr) ¬n }
+infer? ctx (`pos n) with infer? ctx n
+... | yes (`ℕ , r) = yes (`ℤ , ⊢pos r)
+... | yes (`⊤ , r) = no λ { (nt , ⊢pos nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes (`ℤ , r) = no λ { (nt , ⊢pos nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes ((_ ⇒ _) , r) = no λ { (nt , ⊢pos nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes (Rec x , r) = no λ { (nt , ⊢pos nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | no ¬n = no λ { (`ℤ , ⊢pos nr) → contradiction (`ℕ , nr) ¬n }
+infer? ctx (`negsuc n) with infer? ctx n
+... | yes (`ℕ , r) = yes (`ℤ , ⊢negsuc r)
+... | yes (`⊤ , r) = no λ { (`ℤ , ⊢negsuc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes (`ℤ , r) = no λ { (nt , ⊢negsuc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes ((_ ⇒ _) , r) = no λ { (nt , ⊢negsuc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | yes (Rec x , r) = no λ { (nt , ⊢negsuc nr) → contradiction (⊢type-irrelevant r nr) λ () }
+... | no ¬n = no λ { (`ℤ , ⊢negsuc nr) → contradiction (`ℕ , nr) ¬n }
 
-convertMap [] [] = return refl
-convertMap [] (b ∷ bs) = evalError "record has too many fields"
-convertMap (a ∷ as) [] = evalError "record has too many fields"
-convertMap (a ∷ as) (b ∷ bs) = do
-  refl ← convertKV a b
-  refl ← convertMap as bs
-  return refl
-
-convert `ℕ `ℕ = return refl
-convert `ℤ `ℤ = return refl
-convert (la ⇒ lb) (ra ⇒ rb) = do
-  refl ← convert la ra
-  refl ← convert lb rb
-  return refl
-convert (Rec a) (Rec b) = do
-  refl ← convertMap a b
-  return refl
-convert _ _ = evalError "unequal types"
-
-getFromContext : ∀ (Γ : Context Type α) (k : name) → Evaluator (Σ[ index ∈ (k ∈ α) ] Type)
-getFromContext [] k = evalError  "record does not have the requested key"
-getFromContext {x ∷ β} (t ∷ᴬ ctx) k with x ≟ k
-... | yes refl = return (here , t)
-... | no ¬a = (λ (p , ty) → there p , ty) <$> (getFromContext ctx k)
--- then return ({! here!} , {!!}) else {! !}
-
--- Bidirectional style type checking, with two functions defined mutually.
---
--- Both functions return a typing judgement for the specific input term,
--- so we know that we get a correct typing derivation 
--- but also that it is a derivation for the given input(s).
-inferType : ∀ (Γ : Context Type α) u → Evaluator (Σ[ t ∈ Type ] Γ ⊢ u :: t)
-checkType : ∀ (Γ : Context Type α) u (t : Type) → Evaluator (Σ[ s ∈ Type ] (s <: t × Γ ⊢ u :: s))
-
-inferType ctx (` x # index) = return (lookupVar ctx x index , ⊢` index)
-inferType ctx (ƛ x :: ty ⇒ body) = do
-  vt , vrule ← inferType (ctx , x :: ty) body
-  return ((ty ⇒ vt) , ⊢ƛ vrule)
-inferType ctx (lam · arg) = do
-  (a ⇒ b) , lamrule ← inferType ctx lam
-    where _ → evalError "application head should have a function type"
-  (_ , argsub , argrule) ← checkType ctx arg a
-  return (b , ⊢· lamrule argrule argsub)
--- with inferType ctx lam
--- ... | inj₁ x with x == "cannot infer the type of a lambda" = {!!}
--- ...| inj₂ y = {!!}
-inferType ctx (rec []) = return (Rec [] , ⊢rec-empty)
-inferType ctx (rec ((k , v) ∷ c)) with inferType ctx v | inferType ctx (rec c)
-... | inj₁ e | _  = evalError e
-... | _ | inj₁ e  = evalError e
-... | inj₂ (vt , vr) | inj₂ (rt , rr) with k ∈ₖ? c
-... | yes i = evalError "records cannot have duplicate keys"
-... | no ¬i with rt
-... | Rec tm = return (Rec ((k , vt) ∷ tm) , ⊢rec-more ¬i rr vr)
-... | _ = evalError "unreachable"
-inferType ctx (get k r) with inferType ctx r
-... | inj₁ e = evalError e
-... | inj₂ (Rec m , rule) with k ∈ₖ? m
-... | no ¬a = evalError "record does not have the requested key"
-... | yes i = return (lookup i , ⊢get i rule)
-inferType ctx (get k r) | _  = evalError "get needs a record" -- TODO impl `show Type` to say what type
-inferType ctx `zero = return (`ℕ , ⊢zero)
-inferType ctx (`suc n) = do
-  `ℕ , rule ← inferType ctx n
-    where _ → evalError "suc needs an natural"
-  return (`ℕ , ⊢suc rule)
-inferType ctx (`pos n) = do
-  `ℕ , rule ← inferType ctx n
-    where _ → evalError "pos needs an natural"
-  return (`ℤ , ⊢pos rule)
-inferType ctx (`negsuc n) = do
-  `ℕ , rule ← inferType ctx n
-    where _ → evalError "negsuc needs an natural"
-  return (`ℤ , ⊢negsuc rule)
-
-checkType ctx term t with inferType ctx term
-... | inj₁ e = evalError e
-... | inj₂ (s , r) with s <:? t
-... | yes sub = return (s , sub , r)
-... | no sub = evalError "mismatched types"
+check? ctx term t with infer? ctx term
+... | no ¬term = no λ { (t , s , r) → contradiction (t , r) ¬term }
+... | yes (s , r) with s <:? t
+... | no ¬sub = no λ { (ty , sub , rule) → case s ≟ₜ ty of λ
+  { (no ¬eq) → contradiction (⊢type-irrelevant r rule) ¬eq
+  ; (yes refl) → contradiction sub ¬sub
+  } }
+... | yes sub = yes (s , sub , r)
