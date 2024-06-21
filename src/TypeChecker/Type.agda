@@ -1,5 +1,3 @@
-open import Relation.Binary using (DecidableEquality)
-
 module TypeChecker.Type {name : Set} where
 
 open import Data.List using (List)

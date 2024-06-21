@@ -1,20 +1,16 @@
 module Everything where
 
 open import Data.List using ([])
-open import Data.List.Relation.Unary.First
 open import Data.Product
 open import Data.String
-open import Relation.Nullary using (yes; no; contradiction; map′; Dec; does; proof; from-yes)
+open import Data.Unit using (⊤; tt)
 
 name = String
 
 open import Term {name}
 open import TypeChecker _≟_
 open import TypeChecker.Type {name}
-open import TypeChecker.TypingRules _≟_
-open import Util.Context {name}
 open import Util.Evaluator
-open import Util.Scope
 
 private
   open import Agda.Builtin.Equality
@@ -23,28 +19,28 @@ private
   open RawMonad ⦃ ... ⦄
 
   ƛx⇒x : Term
-  ƛx⇒x = ƛ "x" :: `ℕ ⇒ (` "x")
+  ƛx⇒x = ƛ "x" :: `⊤ ⇒ (` "x")
 
   id0 : Term
   id0 = ƛx⇒x · `zero
 
-  ℕ⇒ℕ : Type
-  ℕ⇒ℕ = `ℕ ⇒ `ℕ
+  ⊤⇒⊤ : Type
+  ⊤⇒⊤ = `⊤ ⇒ `⊤
 
-  ⊢ƛx⇒x:ℕ⇒ℕ : Dec (Σ[ s ∈ Type ] ((s <: ℕ⇒ℕ) × ([] ⊢ ƛx⇒x :: s)))
-  ⊢ƛx⇒x:ℕ⇒ℕ = check? [] ƛx⇒x ℕ⇒ℕ
+  ⊢ƛx⇒x:⊤⇒⊤ : Evaluator ⊤
+  ⊢ƛx⇒x:⊤⇒⊤ = check [] ƛx⇒x ⊤⇒⊤
 
-  ⊢id0:ℕ : Dec (Σ[ s ∈ Type ] ((s <: `ℕ) × [] ⊢ id0 :: s))
-  ⊢id0:ℕ = check? [] id0 `ℕ
+  ⊢id0:⊤ : Evaluator ⊤
+  ⊢id0:⊤ = check [] id0 `⊤
 
-  itestid : (infer? [] ƛx⇒x) ≡ yes (ℕ⇒ℕ , ⊢ƛ (⊢` ([ refl ]) ([ refl ]) refl))
+  itestid : (infer [] ƛx⇒x) ≡ return ⊤⇒⊤
   itestid = refl
 
-  subtestid : (ℕ⇒ℕ <:? ℕ⇒ℕ) ≡ (yes (<:⇒ <:ℕ <:ℕ))
+  subtestid : (⊤⇒⊤ <:? ⊤⇒⊤) ≡ return tt
   subtestid = refl
 
-  testid : ⊢ƛx⇒x:ℕ⇒ℕ ≡ yes (ℕ⇒ℕ , <:⇒ <:ℕ <:ℕ , ⊢ƛ (⊢` [ refl ] [ refl ] refl))
+  testid : ⊢ƛx⇒x:⊤⇒⊤ ≡ return tt
   testid = refl
 
-  testid0 : ⊢id0:ℕ ≡ yes (`ℕ , <:ℕ , (⊢· (⊢ƛ (⊢` [ refl ] [ refl ] refl)) ⊢zero <:ℕ))
+  testid0 : ⊢id0:⊤ ≡ return tt
   testid0 = refl
