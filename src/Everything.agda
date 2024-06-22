@@ -4,7 +4,7 @@ open import Data.List using ([])
 open import Data.List.Relation.Unary.First
 open import Data.Product
 open import Data.String
-open import Relation.Nullary using (yes; no; contradiction; map′; Dec; does; proof; from-yes)
+open import Relation.Nullary using (yes; no; Dec)
 
 name = String
 
@@ -12,9 +12,6 @@ open import Term {name}
 open import TypeChecker _≟_
 open import TypeChecker.Type {name}
 open import TypeChecker.TypingRules _≟_
-open import Util.Context {name}
-open import Util.Evaluator
-open import Util.Scope
 
 private
   open import Agda.Builtin.Equality
@@ -32,12 +29,12 @@ private
   ℕ⇒ℕ = `ℕ ⇒ `ℕ
 
   ⊢ƛx⇒x:ℕ⇒ℕ : Dec (Σ[ s ∈ Type ] ((s <: ℕ⇒ℕ) × ([] ⊢ ƛx⇒x :: s)))
-  ⊢ƛx⇒x:ℕ⇒ℕ = check? [] ƛx⇒x ℕ⇒ℕ
+  ⊢ƛx⇒x:ℕ⇒ℕ = check [] ƛx⇒x ℕ⇒ℕ
 
   ⊢id0:ℕ : Dec (Σ[ s ∈ Type ] ((s <: `ℕ) × [] ⊢ id0 :: s))
-  ⊢id0:ℕ = check? [] id0 `ℕ
+  ⊢id0:ℕ = check [] id0 `ℕ
 
-  itestid : (infer? [] ƛx⇒x) ≡ yes (ℕ⇒ℕ , ⊢ƛ (⊢` ([ refl ]) ([ refl ]) refl))
+  itestid : (infer [] ƛx⇒x) ≡ yes (ℕ⇒ℕ , ⊢ƛ (⊢` ([ refl ]) ([ refl ]) refl))
   itestid = refl
 
   subtestid : (ℕ⇒ℕ <:? ℕ⇒ℕ) ≡ (yes (<:⇒ <:ℕ <:ℕ))

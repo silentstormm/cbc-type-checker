@@ -2,35 +2,27 @@ open import Relation.Binary using (DecidableEquality)
 
 module TypeChecker.TypingRules {name : Set} (_≟ₙ_ : DecidableEquality name) where
 
-open import Axiom.Extensionality.Propositional
-open import Data.Bool using (true; false)
-open import Data.Empty using (⊥-elim)
 open import Data.List using (List; []; _∷_)
 open import Data.List.Relation.Unary.First as First using ([_]; _∷_)
-open import Data.List.Relation.Unary.All as All using (All) renaming (_∷_ to _∷ᴬ_)
-open import Data.List.Relation.Unary.All.Properties using (Any¬⇒¬All)
-open import Data.List.Relation.Unary.Any using (Any; here)
-open import Data.Product
-open import Function.Base using (_on_; _∘_; case_of_; flip)
+open import Data.List.Relation.Unary.All as All using (All)
+open import Data.Product using (Σ-syntax; _×_; _,_)
+open import Function.Base using (_∘_)
 open import Level using (0ℓ)
-open import Relation.Binary.Core using (Rel) renaming (_⇒_ to _=>_)
-open import Relation.Binary.Definitions using (Decidable; Irrelevant)
-open import Relation.Binary.PropositionalEquality as Eq using (_≡_; refl; cong; cong₂; sym; inspect)
-open import Relation.Nullary as N using (yes; no; contradiction; map′; Dec; does; proof; from-yes)
+open import Relation.Binary.Core using (Rel)
+open import Relation.Binary.Definitions using (Decidable)
+open import Relation.Binary.PropositionalEquality as Eq using (_≡_; refl; cong; sym)
+open import Relation.Nullary as N using (yes; no; contradiction)
 open import Relation.Nullary.Negation using (¬_)
 
 open import Term
 open import Term.Properties _≟ₙ_ renaming (_≟_ to _≟ᵤ_)
 open import TypeChecker.Type {name}
 open import TypeChecker.Type.Properties _≟ₙ_ renaming (_≟_ to _≟ₜ_)
--- open import Util.Context {name}
 open import Util.Map _≟ₙ_ _≟ₜ_
 open import Util.Map _≟ₙ_ _≟ᵤ_ as Record using () renaming (Map to Record)
-open import Util.Scope
 
 private variable
   x : name
-  α β : Scope name
   A B C D : Type
   u v : Term
 
@@ -57,32 +49,13 @@ data _<:_ : Rel Type 0ℓ where
   <:rec
     : {m n : Map}
     → n ⊆′ m
-    -- → (∀ {e} (i : e ∈₁ m) (j : e ∈₁ n) → (lookup i <: lookup j))
     → All (λ { (k , v) → (i : k ∈ₖ′ m) → lookup′ i <: v}) n
     ---------------------------------
     → Rec m <: Rec n
 infix 3 _<:_
 
--- <:-reflexive : A ≡ B → A <: B
 {-# TERMINATING #-}
 _<:?_ : Decidable _<:_
-
--- <:-reflexive {`⊤} refl = <:⊤
--- <:-reflexive {`ℕ} refl = <:ℕ
--- <:-reflexive {`ℤ} refl = <:ℤ
--- <:-reflexive {A ⇒ B} refl = <:⇒ (<:-reflexive refl) (<:-reflexive refl)
--- <:-reflexive {Rec x} refl = <:rec ⊆′-refl {!!}
---   where
---     allst-refl : ∀ {x : Map} → All (λ { (k , v) → (i : k ∈ₖ′ x) → lookup′ i <: v}) x
---     allst-refl {[]} = All.[]
---     allst-refl {(k , v) ∷ xs} = (λ i → <:-reflexive (cong lookup′ (∈ₖ′-irrelevant {v} i [ refl ]))) ∷ᴬ All.map (λ
---       { {l , w} p → λ
---         { [ refl ] → {!<:-reflexive!} --case l ∈ₖ′? xs of λ { (no ¬i) → {!!} ; (yes i) → {!<:-reflexive !} }
---         ; (x ∷ i) → p i
---         }
---       }) allst-refl
-    -- (All.map (λ { {l , w} i → case l ≟ₙ k of λ { (no ¬eq) → ¬eq ∷ i ; (yes refl) → [ refl ] } }) (-refl {xs}))
-
 s <:? `⊤ = yes <:⊤
 `⊤ <:? `ℕ = no (λ ())
 `ℕ <:? `ℕ = yes <:ℕ
@@ -115,13 +88,13 @@ Rec m <:? Rec n with n ⊆′? m
 (Rec m <:? Rec ((k , v) ∷ o)) | yes subset with k ∈ₖ′? m
 ... | no i = contradiction (All.head subset) i
 ... | yes i with lookup′ i <:? v
-... | no subtype = no λ { (<:rec _ s) → contradiction s (λ { (px ∷ᴬ f) → contradiction (px i) subtype })}
+... | no subtype = no λ { (<:rec _ s) → contradiction s (λ { (px All.∷ f) → contradiction (px i) subtype })}
 ... | yes subtype with Rec m <:? Rec o
-... | yes (<:rec s t) = yes (<:rec subset ((λ { j → lemma (∈ₖ′-irrelevant {v = v} i j) subtype }) ∷ᴬ t))
+... | yes (<:rec s t) = yes (<:rec subset ((λ { j → lemma (∈ₖ′-irrelevant {v = v} i j) subtype }) All.∷ t))
   where
     lemma : ∀ {m : Map} {i j : x ∈ₖ′ m} → i ≡ j → lookup′ i <: A → lookup′ j <: A
     lemma refl s = s
-... | no m<:o = no (m<:o ∘ λ { (<:rec (px ∷ᴬ s) (px₁ ∷ᴬ t)) → <:rec s t })
+... | no m<:o = no (m<:o ∘ λ { (<:rec (px All.∷ s) (px₁ All.∷ t)) → <:rec s t })
 
 data _⊢_::_ (Γ : Map) : Term → Type → Set where
   ⊢`

@@ -4,7 +4,7 @@ module TypeChecker.Type.Properties {name : Set} (_≟ₙ_ : DecidableEquality na
 
 open import Data.List using ([]; _∷_)
 open import Data.Product using (_,_)
-open import Relation.Binary.PropositionalEquality using (_≡_ ; refl ; cong)
+open import Relation.Binary.PropositionalEquality using (refl)
 open import Relation.Nullary using (yes; no; contradiction)
 
 open import TypeChecker.Type
