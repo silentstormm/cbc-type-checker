@@ -1,6 +1,6 @@
 # Correct-by-Construction Type Checking
 
-This repository contains a small example of a correct-by-construction type checker for the [simply-typed lambda calculus](https://en.wikipedia.org/wiki/Simply_typed_lambda_calculus) implemented in [Agda](https://agda.readthedocs.io/en/latest/index.html).
+This repository contains a small example of a correct-by-construction type checker for the [simply-typed lambda calculus](https://en.wikipedia.org/wiki/Simply_typed_lambda_calculus) with records and subtyping implemented in [Agda](https://agda.readthedocs.io/en/latest/index.html).
 
 ## Setup
 
@@ -15,145 +15,168 @@ To get the code working, follow these steps:
 The type checker is built up using various components, outlined below.
 A small example where the type checker is used can be found in the `Everything` module.
 
-### `Util.Scope`
+### `Util.Map` and `Util.Map.KeyValue`
 
-We define the scope (the available variables) as a list of available names:
+We define an association list data structure for variable contexts and records:
 
 ```agda
-Scope : (name : Set) → Set
-Scope name = List name
+module Util.Map.KeyValue {K V : Set} (_≟ₖ_ : DecidableEquality K) (_≟ᵥ_ : DecidableEquality V) where
+
+KV : Set
+KV = K × V
+
+module Util.Map {K V : Set} (_≟ₖ_ : DecidableEquality K) (_≟ᵥ_ : DecidableEquality V) where
+
+Map : Set
+Map = List KV
 ```
 
-Now, to extends scope `α` with name `x`, we simply have to write `x ∷ α`.
-
-To be able to assert a name's availability within the scope, we also define a proof-relevant "in" predicate:
+To be able to find the latest binding of a variable in a `Map`, we define a few memberships based on `First` from the standard library.
 
 ```agda
-data _∈_ {name : Set} (x : name) : Scope name → Set where
-    here  : ∀ {ns : Scope name}                         → x ∈ (x ∷ ns)
-    there : ∀ {n : name} {ns : Scope name} (_ : x ∈ ns) → x ∈ (n ∷ ns)
+_∈′_ : KV → Map → Set
+_∈′_ x = First (x ≢_) (x ≡_)
+
+_∈ₖ′_ : K → Map → Set
+_∈ₖ′_ k = First (k ≢ₖ_) (k ≡ₖ_)
+
+_∈ₖ′?_ : Decidable _∈ₖ′_
+_∈ₖ′?_ k = cofirst?  ((k ≟ₖ_) ∘ proj₁)
+
+_∈₁′_ : KV → Map → Set
+_∈₁′_ k = First (k ≢₁_) (k ≡₁_)
 ```
 
 ### `Term` and `TypeChecker.Type`
 
-We construct a well-scoped syntax for the language:
+We construct a syntax for the language:
 
 ```agda
 data Type : Set where
+  `⊤ : Type
   `ℕ : Type
+  `ℤ : Type
   _⇒_ : (a b : Type) → Type
-
-data Term (α : Scope name) : Set where
-  `_#_ : (x : name) → x ∈ α → Term α
-  ƛ_⇒_ : (x : name) (v : Term (x ∷ α)) → Term α
-  _·_   : (u v : Term α) → Term α
+  Rec : List (name × Type) → Type
+  
+data Term : Set where
+  `_ : name → Term
+  ƛ_::_⇒_ : name → Type → Term → Term
+  _·_   : (f a : Term) → Term
+  rec : List (name × Term) → Term
+  get : name → Term → Term
+  `zero : Term
+  `suc : Term → Term
+  `pos : Term → Term
+  `negsuc : Term → Term
 ```
 
-In our syntax, the identity function (`λ x → x`) would look like this: ``ƛ "x" ⇒ (` "x" # here)``.
-This term would type check against type `` `ℕ ⇒ `ℕ``, but also against ``(`ℕ ⇒ `ℕ) ⇒ (`ℕ ⇒ `ℕ)``.
+The `Term.Properties` and `Typechecker.Type.Properties` modules define a `DecidableEquality` for `Term`s and `Type`s repectively.
 
 ### `TypeChecker.TypingRules`
 
 Next, we specify the typing rules of the language:
 
 ```agda
-data _⊢_∶_ (Γ : Context Type α) : Term α → Type → Set where
+data _<:_ : Rel Type 0ℓ where
+  <:⊤
+    : A <: `⊤
+
+  <:⇒
+    : C <: A
+    → B <: D
+    ---------------------------------
+    → A ⇒ B <: C ⇒ D
+
+  <:ℕ
+    : `ℕ <: `ℕ
+
+  <:ℤ
+    : `ℤ <: `ℤ
+
+  ℕ<:ℤ
+    ---------------------------------
+    : `ℕ <: `ℤ
+
+  <:rec
+    : {m n : Map}
+    → n ⊆′ m
+    → All (λ { (k , v) → (i : k ∈ₖ′ m) → lookup′ i <: v}) n
+    ---------------------------------
+    → Rec m <: Rec n
+
+
+data _⊢_::_ (Γ : Map) : Term → Type → Set where
   ⊢`
-    : (p : x ∈ α)
-    ----------------------------------
-    → Γ ⊢ ` x # p ∶ lookupVar Γ x p
+    : (p : (x , A) ∈′ Γ) (q : x ∈ₖ′ Γ)
+    → A ≡ lookup′ q
+    ---------------------------------
+    → Γ ⊢ ` x :: A
 
   ⊢ƛ
-    : Γ , x ∶ a ⊢ u ∶ b
-    -------------------------------
-    → Γ ⊢ (ƛ x ⇒ u) ∶ a ⇒ b
+    : (x , A) ∷ Γ ⊢ u :: B
+    ---------------------------------
+    → Γ ⊢ (ƛ x :: A ⇒ u) :: A ⇒ B
 
   ⊢·
-    : Γ ⊢ u ∶ (a ⇒ b)
-    → Γ ⊢ v ∶ a
-    ------------------------------------
-    → Γ ⊢ u · v ∶ b
+    : Γ ⊢ u :: (A ⇒ B)
+    → Γ ⊢ v :: C
+    → C <: A
+    ---------------------------------
+    → Γ ⊢ u · v :: B
 
-infix 3 _⊢_∶_
+  ⊢rec-empty
+    ---------------------------------
+    : Γ ⊢ rec [] :: Rec []
+
+  ⊢rec-more
+    : {rs : Record} {rt : Map}
+    → ¬ (x ∈ₖ′ rt)
+    → Γ ⊢ rec rs :: Rec rt
+    → Γ ⊢ v :: A
+    ---------------------------------
+    → Γ ⊢ rec ((x , v) ∷ rs) :: Rec ((x , A) ∷ rt)
+
+  ⊢get
+    : {r : Map} (p : (x , A) ∈′ r) (q : x ∈ₖ′ r)
+    → A ≡ lookup′ q
+    → Γ ⊢ v :: Rec r
+    ---------------------------------
+    → Γ ⊢ get x v :: A
+
+  ⊢zero
+    ---------------------------------
+    : Γ ⊢ `zero :: `ℕ
+
+  ⊢suc
+    : Γ ⊢ v :: `ℕ
+    ---------------------------------
+    → Γ ⊢ `suc v :: `ℕ
+
+  ⊢pos
+    : Γ ⊢ v :: `ℕ
+    ---------------------------------
+    → Γ ⊢ `pos v :: `ℤ
+
+  ⊢negsuc
+    : Γ ⊢ v :: `ℕ
+    ---------------------------------
+    → Γ ⊢ `negsuc v :: `ℤ
 ```
 
-Now we can write `Γ ⊢ u ∶ t` for `u` has type `t` under context `Γ` (where `u` and `Γ` are parametrised with scope `α`).
+Now we can write `Γ ⊢ u ∶ t` for `u` has type `t` under context `Γ` and `S <: T` for `S` is a subtype of `T`.
 
-### `Util.Context`
-
-We begin the implementation of the type checker by defining a variable context as an `All`.
-We parametrise the context on `Scope` and define a variable lookup function:
-
-```agda
-Context : (v : Set) → (α : Scope name) → Set
-Context v α = All (λ _ → v) α
-
-lookupVar : (Γ : Context v α) (x : name) (p : x ∈ α) → v
-lookupVar (v ∷ _  ) x here = v
-lookupVar (_ ∷ ctx) x (there p) = lookupVar ctx x p
-```
-
-Given a predicate `P`, `All P xs` means that every element in `xs` satisfies `P`.
-Here it allows us to assign a type to each variable in the scope.
-
-Note that `Context` takes a parameter `v`, which allows us to determine what kind of value we want to assign to variables.
-When used in a type checker, we pass `Type` as an argument for `v`.
-If we wanted to use `Context` in an interpreter instead, we would pass the value type.
-
-### `Util.Evaluator`
-
-We define a simple evaluator monad with `String` errors:
-
-```agda
-EvalError = String
-
-Evaluator : Set → Set
-Evaluator a = EvalError ⊎ a
-```
+We also define `_<:?_`, a decider for `_<:_` and `⊢type-irrelevant`, a lemma stating that two typing rules with the same context and term derive the same type.
 
 ### `TypeChecker`
-
-Type-checking function application requires conversion checking, i.e. checking whether two types are equal.
-In simply-typed lambda calculus, conversion is just definitional equality, so implementing a conversion checker is straightforward:
-
-```agda
-convert : (a b : Type) → Evaluator (a ≡ b)
-convert `ℕ `ℕ = return refl
-convert (la ⇒ lb) (ra ⇒ rb) = do
-  refl ← convert la ra
-  refl ← convert lb rb
-  return refl
-convert _ _ = evalError "unequal types"
-```
 
 Finally, we define the [bidirectional-style type checking functions](https://plfa.github.io/Inference/) mutually:
 
 ```agda
-inferType : ∀ (Γ : Context Type α) u             → Evaluator (Σ[ t ∈ Type ] Γ ⊢ u ∶ t)
-checkType : ∀ (Γ : Context Type α) u (ty : Type) → Evaluator (Γ ⊢ u ∶ ty)
-
-inferType ctx (` x # index) = return (lookupVar ctx x index , ⊢` index)
-inferType ctx (ƛ x ⇒ body) = evalError "cannot infer the type of a lambda"
-inferType ctx (lam · arg) = do
-  (a ⇒ b) , gtu ← inferType ctx lam
-    where _ → evalError "application head should have a function type"
-  gtv ← checkType ctx arg a
-  return (b , ⊢· gtu gtv)
-
-checkType ctx (ƛ x ⇒ body) (a ⇒ b) = do
-  tr ← checkType (ctx , x ∶ a) body b
-  return (⊢ƛ tr)
-checkType ctx (ƛ _ ⇒ _) _ = evalError "lambda should have a function type"
-checkType ctx term ty = do
-  (t , tr) ← inferType ctx term
-  refl ← convert t ty
-  return tr
+infer : ∀ (Γ : Map) u → Dec (Σ[ t ∈ Type ] Γ ⊢ u :: t)
+check : ∀ (Γ : Map) u (t : Type) → Dec (Σ[ s ∈ Type ] (s <: t × Γ ⊢ u :: s))
 ```
 
 Things to note:
-* Both `inferType` and `checkType` return a typing judgement for the specific input term (and type, in case of `checkType`), so we know not just that we get a correct typing derivation but also that it is a derivation for the given input(s).
-* We make use of Agda's `do`-notation for the `Evaluator` monad.
-  This includes the ability to pattern match on the output of a statement in a `do`-block, and the use of `where` to deal with the cases that are not on the "happy path" (in this case, by throwing an error if the head of an application does not have a function type).
-* In the final case for `checkType`, we call the conversion checker, which (if it succeeds) returns an equality proof.
-  We then match this equality proof against `refl`, unifying the left- and right-hand sides of the equality for the remainder of the `do`-block.
-* Since we return an error message instead of providing evidence of a contradiction in the negative cases, our type checker is _sound_ but _not complete_, i.e. "if it returns a derivation, we know it is correct; but there is nothing to prevent us from writing a function that always returns an error, even when there exists a correct derivation" (see [PLFA: Inference](https://plfa.github.io/Inference/#soundness-and-completeness)).
+* Both `infer` and `check` return a typing judgement for the specific input term (and type, in case of `check`), so we know not just that we get a correct typing derivation but also that it is a derivation for the given input(s).
+* We provide the relevant typing and subtyping rules on success and evidence of a contradiction in the negative cases, so our type checker is _sound_ and _complete_, i.e. regardless of whether it accepts or rejects, we know it is correct.
